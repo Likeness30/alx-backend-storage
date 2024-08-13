@@ -1,0 +1,2 @@
+// This script is used to create a new database, or to use my_db
+use my_db
