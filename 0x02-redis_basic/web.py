@@ -1,47 +1,36 @@
-import redis
+#!/usr/bin/env python3
+"""
+A web cache and tracker
+"""
 import requests
+import redis
 from functools import wraps
 
-# Connect to Redis
-cache = redis.Redis(host='localhost', port=6379, db=0)
+store = redis.Redis()
 
-def cache_decorator(expiration: int = 10):
-    '''Decorator to cache the result of get_page function and set an expiration time'''
-    def decorator(fn):
-        @wraps(fn)
-        def wrapper(url: str):
-            # Check if the URL is already in the cache
-            cached_content = cache.get(url)
-            if cached_content:
-                return cached_content.decode('utf-8')
 
-            # If not cached, fetch the page
-            content = fn(url)
+def count_url_access(method):
+    """ Decorator counting how many times
+    a URL is accessed """
+    @wraps(method)
+    def wrapper(url):
+        cached_key = "cached:" + url
+        cached_data = store.get(cached_key)
+        if cached_data:
+            return cached_data.decode("utf-8")
 
-            # Store the content in the cache with an expiration time
-            cache.setex(url, expiration, content)
+        count_key = "count:" + url
+        html = method(url)
 
-            return content
-        return wrapper
-    return decorator
-
-def count_access(fn):
-    '''Decorator to count how many times a URL was accessed'''
-    @wraps(fn)
-    def wrapper(url: str):
-        # Increment the access count for the URL
-        cache.incr(f"count:{url}")
-        return fn(url)
+        store.incr(count_key)
+        store.set(cached_key, html)
+        store.expire(cached_key, 10)
+        return html
     return wrapper
 
-@cache_decorator(expiration=10)
-@count_access
-def get_page(url: str) -> str:
-    '''Fetches the content of a URL and returns it as a string'''
-    response = requests.get(url)
-    return response.text
 
-if __name__ == "__main__":
-    url = "http://slowwly.robertomurray.co.uk/delay/5000/url/https://example.com"
-    print(get_page(url))
-    print(f"Access count: {cache.get(f'count:{url}').decode('utf-8')}")
+@count_url_access
+def get_page(url: str) -> str:
+    """ Returns HTML content of a url """
+    res = requests.get(url)
+    return res.text
